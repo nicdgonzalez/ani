@@ -20,11 +20,12 @@ mod parser;
 
 use std::fs::File;
 use std::io::{self, Read};
+use std::mem;
 use std::path::Path;
-use std::{iter, mem};
 
 use bitflags::bitflags;
-use ico::{IconDir, IconDirEntry, IconImage};
+pub use ico::IconImage as Image;
+use ico::{IconDir, IconDirEntry};
 
 use crate::builder::AniBuilder;
 use crate::error::ParseError;
@@ -57,7 +58,7 @@ pub struct Ani {
     header: Header,
     rates: Option<Vec<u32>>,
     sequence: Option<Vec<u32>>,
-    frames: Vec<Vec<IconImage>>,
+    frames: Vec<Vec<Image>>,
 }
 
 impl Ani {
@@ -167,7 +168,7 @@ impl Ani {
 
     /// Collection of images stored within the ANI file.
     #[must_use]
-    pub fn frames(&self) -> &[Vec<IconImage>] {
+    pub fn frames(&self) -> &[Vec<Image>] {
         &self.frames
     }
 }
@@ -378,7 +379,7 @@ fn read_seq(data: &[u8]) -> Result<Vec<u32>, ParseError> {
     Ok(sequence)
 }
 
-fn read_fram(data: &[u8]) -> Result<Vec<Vec<IconImage>>, ParseError> {
+fn read_fram(data: &[u8]) -> Result<Vec<Vec<Image>>, ParseError> {
     Parser::new(data)
         .into_iter()
         .map(|chunk| {
