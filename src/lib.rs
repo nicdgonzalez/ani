@@ -31,6 +31,9 @@ use crate::builder::AniBuilder;
 use crate::error::ParseError;
 use crate::parser::Parser;
 
+/// Unit of measurement for a frame's display rate.
+pub const JIFFY: f32 = 1000.0 / 60.0;
+
 const IDENTIFIER_LENGTH: usize = 4;
 const SIZE_LENGTH: usize = mem::size_of::<u32>();
 const SIGNATURE_LENGTH: usize = IDENTIFIER_LENGTH + SIZE_LENGTH + IDENTIFIER_LENGTH;
