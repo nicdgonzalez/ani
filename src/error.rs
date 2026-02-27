@@ -9,20 +9,21 @@ pub enum ParseError {
     MissingRequiredChunk { identifier: &'static str },
     InvalidHeader,
     InvalidIconDir,
-    InvalidIconDirEntry,
+    InvalidIconDirEntry { source: io::Error },
 }
 
 impl error::Error for ParseError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
-            Self::ReadFailed { ref source } => Some(source),
+            Self::ReadFailed { ref source } | Self::InvalidIconDirEntry { ref source } => {
+                Some(source)
+            }
             Self::InvalidSignature
             | Self::NotEnoughBytes { .. }
             | Self::InvalidIdentifier { .. }
             | Self::MissingRequiredChunk { .. }
             | Self::InvalidHeader
-            | Self::InvalidIconDir
-            | Self::InvalidIconDirEntry => None,
+            | Self::InvalidIconDir => None,
         }
     }
 }
@@ -47,7 +48,7 @@ impl fmt::Display for ParseError {
             }
             Self::InvalidHeader => "chunk 'anih' must be 36 bytes".fmt(f),
             Self::InvalidIconDir => "invalid frame header".fmt(f),
-            Self::InvalidIconDirEntry => "invalid frame entry".fmt(f),
+            Self::InvalidIconDirEntry { .. } => "invalid frame entry".fmt(f),
         }
     }
 }

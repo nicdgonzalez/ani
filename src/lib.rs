@@ -402,7 +402,7 @@ fn read_fram(data: &[u8]) -> Result<Vec<Vec<Image>>, ParseError> {
                 .iter()
                 .map(IconDirEntry::decode)
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(|_| ParseError::InvalidIconDirEntry)
+                .map_err(|err| ParseError::InvalidIconDirEntry { source: err })
         })
         .collect::<Result<Vec<_>, _>>()
 }
