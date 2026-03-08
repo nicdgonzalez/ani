@@ -34,13 +34,6 @@ use crate::parser::Parser;
 /// Unit of measurement for a frame's display rate.
 pub const JIFFY: f32 = 1000.0 / 60.0;
 
-const IDENTIFIER_LENGTH: usize = 4;
-const SIZE_LENGTH: usize = mem::size_of::<u32>();
-const SIGNATURE_LENGTH: usize = IDENTIFIER_LENGTH + SIZE_LENGTH + IDENTIFIER_LENGTH;
-
-const RATE_SIZE: usize = mem::size_of::<u32>();
-const SEQUENCE_SIZE: usize = mem::size_of::<u32>();
-
 bitflags! {
     /// Represents a bit flag used in the ANI header.
     #[derive(Debug, Clone, Copy)]
@@ -135,6 +128,8 @@ impl Ani {
     /// Display rate for each of the frames, if available. Otherwise, it is created using
     /// the information provided in the header.
     ///
+    /// [Explanation for how default is constructed]
+    ///
     /// # Panics
     ///
     /// This function panics on architectures where `usize` is smaller than `u32`.
@@ -157,6 +152,8 @@ impl Ani {
 
     /// Ordering of the frames, if available. Otherwise, it is created using the information
     /// provided in the header.
+    ///
+    /// [Explanation for how default is constructed]
     #[must_use]
     pub fn sequence_or_default(&self) -> Vec<u32> {
         self.sequence.as_ref().map_or_else(
@@ -180,43 +177,42 @@ impl TryFrom<&[u8]> for Ani {
     type Error = ParseError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let (signature, data) =
-            value
-                .split_at_checked(SIGNATURE_LENGTH)
-                .ok_or_else(|| ParseError::NotEnoughBytes {
-                    needed: SIGNATURE_LENGTH - value.len(),
-                })?;
+        let mut parser = Parser::new(value);
+        let riff = parser.read_chunk()?;
+        let acon = riff.data.as_subchunk()?;
 
-        if &signature[0..4] != b"RIFF" || &signature[8..12] != b"ACON" {
+        if riff.identifier.as_bytes() != b"RIFF" || acon.identifier.as_bytes() != b"ACON" {
             return Err(ParseError::InvalidSignature);
         }
 
-        Parser::new(data)
+        Parser::new(acon.data.as_bytes())
             .into_iter()
             .try_fold(AniBuilder::default(), |builder, chunk| {
+                tracing::debug!("reading next chunk");
                 let chunk = chunk?;
-                tracing::debug!("Parsing chunk: {:?}", chunk.identifier.as_str());
+                tracing::debug!("chunk identifier: {:?}", chunk.identifier.as_str());
 
                 match chunk.identifier.as_bytes() {
                     b"LIST" => {
-                        let (identifier, data) = chunk
-                            .data
-                            .split_at_checked(IDENTIFIER_LENGTH)
-                            .ok_or_else(|| ParseError::NotEnoughBytes {
-                                needed: IDENTIFIER_LENGTH - chunk.data.len(),
-                            })?;
+                        let subchunk = chunk.data.as_subchunk()?;
+                        tracing::debug!("Parsing subchunk: {:?}", subchunk.identifier.as_str());
 
-                        match identifier {
-                            b"INFO" => Metadata::from_data(data).map(|v| builder.with_metadata(v)),
-                            b"fram" => read_fram(data).map(|v| builder.with_frames(v)),
+                        match subchunk.identifier.as_bytes() {
+                            b"INFO" => Metadata::from_data(subchunk.data.as_bytes())
+                                .map(|v| builder.with_metadata(v)),
+                            b"fram" => {
+                                read_fram(subchunk.data.as_bytes()).map(|v| builder.with_frames(v))
+                            }
                             bytes => Err(ParseError::InvalidIdentifier {
                                 identifier: bytes.to_vec(),
                             }),
                         }
                     }
-                    b"anih" => Header::from_data(chunk.data).map(|v| builder.with_header(v)),
-                    b"rate" => read_rate(chunk.data).map(|v| builder.with_rates(v)),
-                    b"seq " => read_seq(chunk.data).map(|v| builder.with_sequence(v)),
+                    b"anih" => {
+                        Header::from_data(chunk.data.as_bytes()).map(|v| builder.with_header(v))
+                    }
+                    b"rate" => read_rate(chunk.data.as_bytes()).map(|v| builder.with_rates(v)),
+                    b"seq " => read_seq(chunk.data.as_bytes()).map(|v| builder.with_sequence(v)),
                     bytes => Err(ParseError::InvalidIdentifier {
                         identifier: bytes.to_vec(),
                     }),
@@ -243,8 +239,12 @@ impl Metadata {
             let chunk = chunk?;
 
             match chunk.identifier.as_bytes() {
-                b"INAM" => title = Some(String::from_utf8_lossy(chunk.data).to_string()),
-                b"IART" => author = Some(String::from_utf8_lossy(chunk.data).to_string()),
+                b"INAM" => {
+                    title = Some(String::from_utf8_lossy(chunk.data.as_bytes()).to_string());
+                }
+                b"IART" => {
+                    author = Some(String::from_utf8_lossy(chunk.data.as_bytes()).to_string());
+                }
                 _ => {} // Ignore additional unregistered identifiers
             }
         }
@@ -348,6 +348,10 @@ impl Header {
     }
 }
 
+/// Number of bytes a rate entry occupies.
+const RATE_SIZE: usize = mem::size_of::<u32>();
+
+/// Decode the `rate` chunk.
 fn read_rate(data: &[u8]) -> Result<Vec<u32>, ParseError> {
     let mut chunks = data.chunks_exact(RATE_SIZE);
 
@@ -365,7 +369,12 @@ fn read_rate(data: &[u8]) -> Result<Vec<u32>, ParseError> {
     Ok(rates)
 }
 
+/// Number of bytes a sequence entry occupies.
+const SEQUENCE_SIZE: usize = mem::size_of::<u32>();
+
+/// Decode the `seq ` chunk.
 fn read_seq(data: &[u8]) -> Result<Vec<u32>, ParseError> {
+    tracing::debug!("Sequence data length: {}", data.len());
     let mut chunks = data.chunks_exact(SEQUENCE_SIZE);
 
     let sequence = chunks
@@ -374,6 +383,10 @@ fn read_seq(data: &[u8]) -> Result<Vec<u32>, ParseError> {
         .collect::<Vec<_>>();
 
     if !chunks.remainder().is_empty() {
+        tracing::debug!(
+            "Remainder: {:?}",
+            chunks.remainder().iter().collect::<Vec<_>>()
+        );
         return Err(ParseError::NotEnoughBytes {
             needed: SEQUENCE_SIZE - data.len().rem_euclid(SEQUENCE_SIZE),
         });
@@ -394,7 +407,7 @@ fn read_fram(data: &[u8]) -> Result<Vec<Vec<Image>>, ParseError> {
                 });
             }
 
-            let reader = io::Cursor::new(chunk.data);
+            let reader = io::Cursor::new(chunk.data.as_bytes());
             let icon_dir = IconDir::read(reader).map_err(|_| ParseError::InvalidIconDir)?;
 
             icon_dir

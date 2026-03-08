@@ -1,6 +1,7 @@
 use crate::error::ParseError;
 
-pub const IDENTIFIER_LENGTH: usize = 4;
+/// Length of a chunk identifier.
+const IDENTIFIER_LENGTH: usize = 4;
 
 /// Represents an on-going parse over an ANI-formatted buffer.
 ///
@@ -74,7 +75,7 @@ impl<'a> Parser<'a> {
     /// This function returns an error if:
     ///
     /// - Fewer than `size` (or `size` + 1) bytes remain in the buffer
-    pub fn read_data(&mut self, size: u32) -> Result<&'a [u8], ParseError> {
+    pub fn read_data(&mut self, size: u32) -> Result<Data<'a>, ParseError> {
         let size = usize::try_from(size).expect("expected u32 to fit within a usize");
 
         // If the chunk size is odd, there is an additional pad byte at the end of the data.
@@ -86,7 +87,7 @@ impl<'a> Parser<'a> {
         // SAFETY: `size` is always less than or equal to the number of bytes read.
         let (data, _) = unsafe { self.read_bytes(read_size)?.split_at_unchecked(size) };
 
-        Ok(data)
+        Ok(Data { inner: data })
     }
 
     /// Read a chunk's identifier, size, and data.
@@ -133,27 +134,56 @@ impl<'a> Iterator for ChunkIter<'a> {
 #[derive(Debug)]
 pub struct Chunk<'a> {
     pub identifier: Identifier<'a>,
-    pub data: &'a [u8],
+    // pub data: &'a [u8],
+    pub data: Data<'a>,
 }
 
 #[derive(Debug)]
-pub struct Identifier<'a>(&'a [u8]);
+pub struct Identifier<'a> {
+    inner: &'a [u8],
+}
 
 impl<'a> From<&'a [u8]> for Identifier<'a> {
     fn from(value: &'a [u8]) -> Self {
-        Self(value)
+        Self { inner: value }
     }
 }
 
 impl Identifier<'_> {
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
-        self.0
+        self.inner
     }
 
     pub fn as_str(&self) -> Result<&str, ParseError> {
-        str::from_utf8(self.0).map_err(|_| ParseError::InvalidIdentifier {
-            identifier: self.0.to_vec(),
+        str::from_utf8(self.inner).map_err(|_| ParseError::InvalidIdentifier {
+            identifier: self.inner.to_vec(),
         })
+    }
+}
+
+#[derive(Debug)]
+pub struct Data<'a> {
+    inner: &'a [u8],
+}
+
+impl Data<'_> {
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.inner
+    }
+}
+
+impl<'a> Data<'a> {
+    pub fn as_subchunk(&self) -> Result<Chunk<'a>, ParseError> {
+        self.inner
+            .split_at_checked(IDENTIFIER_LENGTH)
+            .map(|(identifier, data)| Chunk {
+                identifier: Identifier { inner: identifier },
+                data: Data { inner: data },
+            })
+            .ok_or_else(|| ParseError::NotEnoughBytes {
+                needed: IDENTIFIER_LENGTH - self.inner.len(),
+            })
     }
 }

@@ -18,6 +18,7 @@ impl error::Error for ParseError {
             Self::ReadFailed { ref source } | Self::InvalidIconDirEntry { ref source } => {
                 Some(source)
             }
+
             Self::InvalidSignature
             | Self::NotEnoughBytes { .. }
             | Self::InvalidIdentifier { .. }
