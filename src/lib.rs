@@ -29,10 +29,7 @@ use ico::{IconDir, IconDirEntry};
 
 use crate::builder::AniBuilder;
 use crate::error::ParseError;
-use crate::parser::Parser;
-
-/// Unit of measurement for a frame's display rate.
-pub const JIFFY: f32 = 1000.0 / 60.0;
+pub use crate::parser::Parser;
 
 bitflags! {
     /// Represents a bit flag used in the ANI header.

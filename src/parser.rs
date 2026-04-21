@@ -19,6 +19,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Returns `true` if the entire buffer has been consumed.
+    #[must_use]
     pub fn finished(&self) -> bool {
         self.buffer.is_empty()
     }
@@ -61,8 +62,9 @@ impl<'a> Parser<'a> {
     ///
     /// - Fewer than 4 bytes remain in the buffer
     pub fn read_size(&mut self) -> Result<u32, ParseError> {
+        #[expect(clippy::missing_panics_doc, reason = "unreachable panic")]
         self.read_bytes(std::mem::size_of::<u32>())
-            .map(move |bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
     }
 
     /// Read `size` bytes from the buffer.
@@ -75,6 +77,10 @@ impl<'a> Parser<'a> {
     /// This function returns an error if:
     ///
     /// - Fewer than `size` (or `size` + 1) bytes remain in the buffer
+    ///
+    /// # Panics
+    ///
+    /// This function panics on architectures where `usize` is smaller than a `u32`.
     pub fn read_data(&mut self, size: u32) -> Result<Data<'a>, ParseError> {
         let size = usize::try_from(size).expect("expected u32 to fit within a usize");
 
