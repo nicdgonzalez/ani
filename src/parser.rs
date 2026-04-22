@@ -108,7 +108,11 @@ impl<'a> Parser<'a> {
         let identifier = self.read_identifier()?;
         let size = self.read_size()?;
         let data = self.read_data(size)?;
-        Ok(Chunk { identifier, data })
+        Ok(Chunk {
+            identifier,
+            size,
+            data,
+        })
     }
 }
 
@@ -140,7 +144,7 @@ impl<'a> Iterator for ChunkIter<'a> {
 #[derive(Debug)]
 pub struct Chunk<'a> {
     pub identifier: Identifier<'a>,
-    // pub data: &'a [u8],
+    pub size: u32,
     pub data: Data<'a>,
 }
 
@@ -186,6 +190,10 @@ impl<'a> Data<'a> {
             .split_at_checked(IDENTIFIER_LENGTH)
             .map(|(identifier, data)| Chunk {
                 identifier: Identifier { inner: identifier },
+                size: data
+                    .len()
+                    .try_into()
+                    .expect("length of data to fit within u32"),
                 data: Data { inner: data },
             })
             .ok_or_else(|| ParseError::NotEnoughBytes {
